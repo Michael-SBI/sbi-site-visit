@@ -30,7 +30,7 @@ import * as N from "./lib/naming";
 import * as Store from "./lib/store";
 import type { DrawingMeta, Job, Settings } from "./lib/store";
 
-const VERSION = "1.2.5";
+const VERSION = "1.2.6";
 const UNIT = 1.5; // canvas units per PDF point
 
 // Clean markup defaults: red, sharp, no hand-drawn wobble, a plain font.
@@ -202,8 +202,34 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (api && ready?.initialData?.elements?.length) toast("Picked up where you left off.");
+    if (!api) return;
+    // A link from a ClickUp comment: ?open=<drawing's Drive id>
+    const openId = new URLSearchParams(location.search).get("open");
+    if (openId) {
+      history.replaceState(null, "", location.pathname);
+      openFromLink(openId);
+    } else if (ready?.initialData?.elements?.length) toast("Picked up where you left off.");
   }, [api]);
+
+  async function openFromLink(id: string) {
+    // Google's sign-in popup needs a tap, so ask first.
+    const a = await askUser({
+      title: "Open the site visit drawing?",
+      text: "This link opens a drawing saved in Drive. You'll sign in with your spokebi Google account.",
+      ok: "Open it",
+    });
+    if (!a) return;
+    try {
+      await G.signIn();
+      setBusy("Opening the drawing…");
+      const f = await G.getFile(id);
+      await openFromDrive(f);
+    } catch (e: any) {
+      toast("Couldn't open that drawing: " + e.message, true);
+    } finally {
+      setBusy(null);
+    }
+  }
 
   /** Drawings from before the Imports layer: put plans and photos underneath and lock them. */
   function settleImports() {
@@ -720,7 +746,9 @@ export default function App() {
     setBusy("Posting to ClickUp…");
     try {
       const target = await CU.findPostTarget(job.id);
-      const lines = [`Site Visit Record: ${m.name}`, m.drive.pdfLink];
+      // The PDF for anyone; the drawing opens in the app itself (full quality, editable), for spokebi accounts.
+      const appLink = `${location.origin}${import.meta.env.BASE_URL}?open=${m.drive.excalidrawId}`;
+      const lines = [`Site Visit Record: ${m.name}`, `PDF: ${m.drive.pdfLink}`, `Open the drawing: ${appLink}`];
       if (!job.folderId) {
         // No job folder yet: the files go on the deal (sales-stage rule), to be filed once the folder exists.
         setBusy("Attaching to the deal…");
