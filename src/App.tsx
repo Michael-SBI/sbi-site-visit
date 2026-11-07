@@ -5,6 +5,7 @@ import {
   WelcomeScreen,
   CaptureUpdateAction,
   convertToExcalidrawElements,
+  exportToCanvas,
   getCommonBounds,
   getNonDeletedElements,
   hashElementsVersion,
@@ -20,6 +21,7 @@ import { Ask, AskField } from "./components/Modal";
 import { JobPicker } from "./components/JobPicker";
 import { FileBrowser } from "./components/FileBrowser";
 import { SettingsPanel } from "./components/Settings";
+import { SiteVisits } from "./components/SiteVisits";
 import * as G from "./lib/google";
 import * as CU from "./lib/clickup";
 import { buildPdf, isSheet } from "./lib/exportPdf";
@@ -28,7 +30,7 @@ import * as N from "./lib/naming";
 import * as Store from "./lib/store";
 import type { DrawingMeta, Job, Settings } from "./lib/store";
 
-const VERSION = "1.0.0";
+const VERSION = "1.1.0";
 const UNIT = 1.5; // canvas units per PDF point
 
 // Clean markup defaults: red, sharp, no hand-drawn wobble, a plain font.
@@ -59,6 +61,38 @@ const STAMPS: { word: string; color: string }[] = [
 ];
 const HIGHLIGHT = { currentItemStrokeColor: "#fcc419", currentItemOpacity: 35, currentItemStrokeWidth: 4 };
 
+/** A small JPEG of the whole drawing, URL-safe base64 as Drive's thumbnail field wants it. */
+async function makeThumb(elements: readonly any[], files: any): Promise<string | null> {
+  try {
+    const canvas = await exportToCanvas({
+      elements: elements as any,
+      files,
+      appState: { exportBackground: true, viewBackgroundColor: "#ffffff" },
+      exportPadding: 24,
+      maxWidthOrHeight: 640,
+    } as any);
+    const b64 = canvas.toDataURL("image/jpeg", 0.78).split(",")[1];
+    canvas.width = canvas.height = 0;
+    return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  } catch {
+    return null;
+  }
+}
+
+/** What the Site visits list shows, stored on the drawing file (appProperties: 124 bytes each). */
+function visitProps(job: Job, elements: readonly any[], pdfId: string, posted: boolean): Record<string, string> {
+  return {
+    svr: "1",
+    v: VERSION,
+    jobId: job.id,
+    jobName: G.fitProp("jobName", job.name),
+    sheets: String(elements.filter(isSheet).length),
+    photos: String(elements.filter((e) => e.customData?.sbiPhoto).length),
+    posted: posted ? "1" : "0",
+    pdfId,
+  };
+}
+
 type AskState = {
   title: string;
   text?: React.ReactNode;
@@ -86,7 +120,7 @@ export default function App() {
   const [highlighting, setHighlighting] = useState(false);
   const hlSaved = useRef<any>(null);
   const [sheetsLocked, setSheetsLocked] = useState(true);
-  const [panel, setPanel] = useState<null | "jobs" | "browse" | "settings" | "stamps" | "add" | "more">(null);
+  const [panel, setPanel] = useState<null | "jobs" | "browse" | "settings" | "stamps" | "add" | "more" | "visits">(null);
   const [ask, setAsk] = useState<AskState>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [jobsAt, setJobsAt] = useState<string | null>(null);
@@ -548,22 +582,36 @@ export default function App() {
       const pdf = await buildPdf({ elements, files, jobName: job!.name, fileName: name });
 
       setBusy("Saving to Drive…");
-      const put = async (id: string | null, fname: string, mime: string, blob: Blob) => {
-        if (id) {
-          try {
-            return await G.updateFile(id, fname, mime, blob);
-          } catch {
-            /* moved or deleted: make a new one */
+      const put = async (id: string | null, fname: string, mime: string, blob: Blob, extra: any = {}) => {
+        const attempt = async (x: object) => {
+          if (id) {
+            try {
+              return await G.updateFile(id, fname, mime, blob, x);
+            } catch (e: any) {
+              if (e.status !== 404) throw e; // 404: moved or deleted, so make a new one
+            }
           }
+          return G.createFile(folder, fname, mime, blob, x);
+        };
+        try {
+          return await attempt(extra);
+        } catch (e: any) {
+          // A preview picture Drive won't take must never stop the save.
+          if (!extra.contentHints || e.status !== 400) throw e;
+          const { contentHints, ...rest } = extra;
+          return attempt(rest);
         }
-        return G.createFile(folder, fname, mime, blob);
       };
       const pdfFile = await put(m.drive.pdfId, name + ".pdf", "application/pdf", pdf);
       const drive = { folderId: folder, pdfId: pdfFile.id, pdfLink: pdfFile.webViewLink || `https://drive.google.com/file/d/${pdfFile.id}/view`, excalidrawId: m.drive.excalidrawId };
       const scene = JSON.parse(serializeAsJSON(elements, a.getAppState(), files, "local"));
       scene.sbi = { app: "SBI Site Visit Record", version: VERSION, name, job, drive, photos: m.photos };
       const sceneBlob = new Blob([JSON.stringify(scene)], { type: G.EXCALIDRAW_MIME });
-      const exFile = await put(m.drive.excalidrawId, name + ".excalidraw", G.EXCALIDRAW_MIME, sceneBlob);
+      // Details and a preview ride on the file, so the Site visits list never has to open it.
+      const thumb = await makeThumb(elements, files);
+      const extra: any = { appProperties: visitProps(job!, elements, pdfFile.id, !!m.postedAt) };
+      if (thumb) extra.contentHints = { thumbnail: { image: thumb, mimeType: "image/jpeg" } };
+      const exFile = await put(m.drive.excalidrawId, name + ".excalidraw", G.EXCALIDRAW_MIME, sceneBlob, extra);
       drive.excalidrawId = exFile.id;
 
       setMeta({ ...metaRef.current, drive, savedHash: hashElementsVersion(a.getSceneElements()), savedAt: new Date().toISOString() });
@@ -633,6 +681,8 @@ export default function App() {
       setBusy("Posting to ClickUp…");
       await CU.postComment(target.id, lines.join("\n"));
       setMeta({ ...metaRef.current, postedAt: new Date().toISOString() });
+      // Tick "posted" on the drawing for the Site visits list. Not worth failing the post over.
+      if (m.drive.excalidrawId) G.patchMeta(m.drive.excalidrawId, { appProperties: { posted: "1" } }).catch(() => {});
       toast(`Posted to ClickUp: ${target.name}`);
     } catch (e: any) {
       toast(e.message, true);
@@ -671,6 +721,24 @@ export default function App() {
     } finally {
       setBusy(null);
     }
+  }
+
+  // The Site visits list. In the dev build a stand-in list can replace Drive for testing.
+  const loadVisits = (sinceIso: string) =>
+    (import.meta.env.DEV && (window as any).__svrMockVisits ? (window as any).__svrMockVisits(sinceIso) : G.searchVisits(sinceIso));
+
+  async function openVisits() {
+    setPanel(null);
+    if (!(import.meta.env.DEV && (window as any).__svrMockVisits)) {
+      try {
+        await G.signIn(); // while the tap still counts for Google's popup
+      } catch (e: any) {
+        toast(e.message, true);
+        if (!G.googleConfigured()) setPanel("settings");
+        return;
+      }
+    }
+    setPanel("visits");
   }
 
   async function confirmDiscard(): Promise<boolean> {
@@ -771,7 +839,7 @@ export default function App() {
     status = `Saved to Drive ${new Date(meta.savedAt).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit" })}`;
   else status = online ? "Not saved to Drive" : "Offline · kept on this device";
 
-  if (import.meta.env.DEV) (window as any).__svr = { api: apiRef.current, buildPdf, meta: metaRef.current, N };
+  if (import.meta.env.DEV) (window as any).__svr = { api: apiRef.current, buildPdf, meta: metaRef.current, N, makeThumb, visitProps, G };
 
   if (!ready) return <div className="svr-loading">Loading…</div>;
 
@@ -811,6 +879,7 @@ export default function App() {
           {tb(sheetsLocked ? "lock" : "unlock", sheetsLocked ? "Locked" : "Unlocked", toggleLock, !sheetsLocked, sheetsLocked ? "Plans are locked. Tap to unlock and move them." : "Plans can move. Tap to lock them.")}
           <span className="svr-sep" />
           {tb("camera", "Photo", () => cameraInput.current?.click())}
+          {tb("visits", "Visits", openVisits, panel === "visits", "Site visits saved in the last month")}
           <div className="svr-pop">
             {tb("plus", "Add", () => setPanel(panel === "add" ? null : "add"), panel === "add")}
             {panel === "add" && (
@@ -895,6 +964,16 @@ export default function App() {
       )}
       {panel === "browse" && browseRoot && (
         <FileBrowser rootId={browseRoot.id} rootName={browseRoot.name} onOpen={openFromDrive} onClose={() => setPanel(null)} />
+      )}
+      {panel === "visits" && (
+        <SiteVisits
+          load={loadVisits}
+          token={G.currentToken()}
+          currentJob={meta.job}
+          unsaved={dirty ? { name: meta.name || suggestedName(), job: meta.job?.name || "No job picked yet" } : null}
+          onOpen={(f) => openFromDrive(f)}
+          onClose={() => setPanel(null)}
+        />
       )}
       {panel === "settings" && (
         <SettingsPanel settings={settings} configClientId={config.googleClientId} googleSignedIn={G.signedIn()} version={VERSION}

@@ -36,6 +36,8 @@ Open the live link in Chrome on the tablet, then **⋮ > Add to home screen** (o
 | Photos | `2.0 SITE- PICS_IMAGES_DOCS_NOTES` | My Drive / SBI Site Visit Record / {deal} / Photos |
 | Post | Comment with the PDF link on the deal's Site Visit Canvas subtask (else Site measure, else the deal) | PDF and photos attached to the deal, plus the comment |
 
+**Visits** (top bar) lists every site visit saved in the last month, across all jobs, with a preview, the job, who saved it and when, sheet and photo counts, and whether it's posted. The details and preview are stored on the drawing file itself (Drive `appProperties` and `contentHints.thumbnail`), so the list is one Drive search.
+
 Each save writes two files: `{name}.pdf` (anyone can open it) and `{name}.excalidraw` (the editable drawing). Saving again updates the same two files.
 
 Names: `YYMMDD SBI - Markup of [source drawing] - FOR INFO`, or `YYMMDD SBI - Site visit record` for a sketch.

@@ -20,6 +20,9 @@ export type DriveFile = {
   webViewLink?: string;
   parents?: string[];
   shortcutDetails?: { targetId: string; targetMimeType: string };
+  thumbnailLink?: string;
+  appProperties?: Record<string, string>;
+  lastModifyingUser?: { displayName?: string; emailAddress?: string };
 };
 
 let clientId = "";
@@ -119,12 +122,56 @@ async function call(url: string, init: RequestInit = {}, retry = true): Promise<
     } catch {
       /* not json */
     }
-    throw new Error("Drive: " + msg);
+    const err: any = new Error("Drive: " + msg);
+    err.status = res.status;
+    throw err;
   }
   return res;
 }
 
-const FIELDS = "id,name,mimeType,modifiedTime,size,webViewLink,parents,shortcutDetails";
+const FIELDS = "id,name,mimeType,modifiedTime,size,webViewLink,parents,shortcutDetails,thumbnailLink,appProperties,lastModifyingUser(displayName,emailAddress)";
+
+export const currentToken = () => (signedIn() ? token!.value : null);
+
+/**
+ * Site visits saved since `sinceIso`, newest first, across My Drive and the shared drives.
+ * Found by the app's own tag on the file (appProperties svr=1) or the drawing's file type.
+ */
+export async function searchVisits(sinceIso: string): Promise<DriveFile[]> {
+  const out: DriveFile[] = [];
+  let pageToken = "";
+  const q = encodeURIComponent(
+    `(appProperties has { key='svr' and value='1' } or mimeType='${EXCALIDRAW_MIME}') and modifiedTime > '${sinceIso}' and trashed=false`,
+  );
+  do {
+    const r = await call(
+      `${API}/files?q=${q}&${ALL}&includeItemsFromAllDrives=true&corpora=allDrives&pageSize=100` +
+        `&fields=nextPageToken,files(${FIELDS})` + (pageToken ? `&pageToken=${pageToken}` : ""),
+    );
+    const j = await r.json();
+    out.push(...j.files);
+    pageToken = j.nextPageToken || "";
+  } while (pageToken && out.length < 500);
+  return out.sort((a, b) => (b.modifiedTime || "").localeCompare(a.modifiedTime || ""));
+}
+
+/** Changes a file's details (not its contents). */
+export async function patchMeta(id: string, body: object) {
+  const r = await call(`${API}/files/${id}?${ALL}&fields=id`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return r.json();
+}
+
+/** appProperties allow 124 bytes per key + value: trims a value to fit. */
+export function fitProp(key: string, value: string): string {
+  const enc = new TextEncoder();
+  let v = value;
+  while (enc.encode(key + v).length > 124) v = Array.from(v).slice(0, -1).join("");
+  return v;
+}
 
 export async function getFile(id: string): Promise<DriveFile> {
   const r = await call(`${API}/files/${id}?${ALL}&fields=${FIELDS}`);
@@ -174,13 +221,13 @@ export async function ensureChildFolder(parentId: string, exactName: string, mat
 }
 
 /** Creates a file in a folder. Resumable upload, so big plan sets go through. */
-export async function createFile(folderId: string, name: string, mime: string, blob: Blob): Promise<DriveFile> {
-  return upload(`${UPLOAD}/files?uploadType=resumable&${ALL}&fields=${FIELDS}`, "POST", { name, parents: [folderId], mimeType: mime }, mime, blob);
+export async function createFile(folderId: string, name: string, mime: string, blob: Blob, extra: object = {}): Promise<DriveFile> {
+  return upload(`${UPLOAD}/files?uploadType=resumable&${ALL}&fields=${FIELDS}`, "POST", { ...extra, name, parents: [folderId], mimeType: mime }, mime, blob);
 }
 
 /** Replaces a file's contents (and name) in place, keeping its id and its links. */
-export async function updateFile(id: string, name: string, mime: string, blob: Blob): Promise<DriveFile> {
-  return upload(`${UPLOAD}/files/${id}?uploadType=resumable&${ALL}&fields=${FIELDS}`, "PATCH", { name }, mime, blob);
+export async function updateFile(id: string, name: string, mime: string, blob: Blob, extra: object = {}): Promise<DriveFile> {
+  return upload(`${UPLOAD}/files/${id}?uploadType=resumable&${ALL}&fields=${FIELDS}`, "PATCH", { ...extra, name }, mime, blob);
 }
 
 async function upload(url: string, method: string, meta: object, mime: string, blob: Blob): Promise<DriveFile> {

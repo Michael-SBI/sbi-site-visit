@@ -178,5 +178,31 @@ body {
 .svr-file.pdf svg { color: var(--red); }
 .svr-file-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 
+/* site visits */
+.svr-modal.wide:has(.svr-visits) { width: min(980px, 100%); }
+.svr-visits-tools { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; }
+.svr-visits-tools .svr-search { margin: 0; flex: 1; }
+.svr-seg { display: flex; border: 1px solid var(--hair); border-radius: 8px; overflow: hidden; flex: none; }
+.svr-seg button { height: 44px; padding: 0 14px; border: 0; background: #fff; font: 600 14px var(--ui); color: var(--stone); cursor: pointer; }
+.svr-seg button.on { background: var(--graphite); color: #fff; }
+.svr-visits { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.svr-visit {
+  display: flex; flex-direction: column; text-align: left; padding: 0; overflow: hidden; cursor: pointer;
+  border: 1px solid var(--hair); border-radius: 14px; background: #fff; color: var(--graphite); font: inherit;
+}
+.svr-visit:hover { border-color: var(--lime); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08); }
+.svr-visit.unsaved { border-color: #ffc078; background: #fff9f2; }
+.svr-thumb { display: block; width: 100%; aspect-ratio: 16 / 10; object-fit: contain; background: var(--paper); border-bottom: 1px solid var(--hair); }
+.svr-thumb.empty { display: grid; place-items: center; color: #b5b7b4; }
+.svr-visit-body { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px 12px; min-width: 0; }
+.svr-visit-body strong { font-size: 14px; line-height: 1.3; overflow-wrap: anywhere; }
+.svr-visit-job { font-size: 13px; font-weight: 600; color: var(--lime-ink); }
+.svr-flag {
+  align-self: flex-start; margin-top: 2px; font: 500 11px "IBM Plex Mono", ui-monospace, monospace; text-transform: uppercase;
+  letter-spacing: 0.05em; padding: 3px 8px; border-radius: 100px; background: var(--cloud); color: var(--stone);
+}
+.svr-flag.ok { background: #e3f1d9; color: var(--lime-ink); }
+.svr-flag.warn { background: #fff4e6; color: #a65d00; }
+
 /* Excalidraw tweaks: keep its toolbar clear of our bar, show our green on its selected tool */
 .svr-canvas .excalidraw { --color-primary: #3f7322; --color-primary-darker: #2f5a19; --color-primary-darkest: #234412; --color-primary-light: #e3f1d9; }
