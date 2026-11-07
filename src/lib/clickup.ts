@@ -13,9 +13,17 @@ export function configureClickUp(t: string, listId?: string) {
 }
 export const clickupConfigured = () => !!token;
 
-// Terminal statuses (sales_rules.TERMINAL). Lost and declined deals aren't jobs we visit.
-const DEAD = new Set(["done lost after proposal", "declined_no proposal"]);
+// Deal statuses in pipeline order (sales_rules.STATUSES). The first five come before the site visit.
+const PIPELINE = [
+  "inquiries recieved", "active outreach", "qualified lead", "ballpark budget", "initial meeting booked",
+  "meet/inspection completed", "design concept", "plans- layout/rayon", "pricing", "proposal build",
+  "presentation meeting ready", "presentation sent", "re-price proposal", "re-present proposal", "contracts requested",
+];
+const NEEDS_VISIT = new Set(PIPELINE.slice(0, 5));
+// Michael, 7 Nov 2026: leave out parked, won, lost and declined deals.
+const LEFT_OUT = new Set(["on hold drip feed", "client ghosting", "closed won", "done lost after proposal", "declined_no proposal"]);
 const WON = "closed won";
+export const stageOf = (status: string) => (NEEDS_VISIT.has(status) ? "visit" : "active");
 // New deals start here, as sales-lead-info does; a ClickUp automation then adds the P1–P5 subtasks.
 const NEW_STATUS = "inquiries recieved";
 
@@ -48,22 +56,24 @@ function toJob(t: any): Job {
   };
 }
 
-/** Live deals and won jobs from the Deals list, live ones first. */
+/**
+ * Live sales deals: those still needing a site visit first, then the rest, each in pipeline order.
+ * One quick request: open deals only, no subtasks.
+ */
 export async function listJobs(): Promise<Job[]> {
   const out: Job[] = [];
-  for (let page = 0; page < 30; page++) {
-    const j = await call(`/list/${dealsList}/task?include_closed=true&subtasks=false&archived=false&page=${page}`);
+  for (let page = 0; page < 10; page++) {
+    const j = await call(`/list/${dealsList}/task?include_closed=false&subtasks=false&archived=false&page=${page}`);
     for (const t of j.tasks || []) {
       if (t.parent) continue;
       const job = toJob(t);
-      if (DEAD.has(job.status)) continue;
-      // 200+ old sold jobs would bury the live ones: keep jobs won in the last 12 months.
-      if (job.sold && Date.now() - Number(t.date_closed || t.date_done || 0) > 365 * 864e5) continue;
-      out.push(job);
+      // Only real sales stages: leaves out parked/closed deals and stray tasks with other statuses.
+      if (!LEFT_OUT.has(job.status) && PIPELINE.includes(job.status)) out.push(job);
     }
     if (j.last_page || (j.tasks || []).length < 100) break;
   }
-  return out.sort((a, b) => Number(a.sold) - Number(b.sold) || a.name.localeCompare(b.name));
+  const rank = (s: string) => (PIPELINE.indexOf(s) < 0 ? 99 : PIPELINE.indexOf(s));
+  return out.sort((a, b) => rank(a.status) - rank(b.status) || a.name.localeCompare(b.name));
 }
 
 export async function getJob(id: string): Promise<Job> {

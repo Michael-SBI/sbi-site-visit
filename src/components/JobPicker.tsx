@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Modal } from "./Modal";
 import { Icon } from "./icons";
 import type { Job } from "../lib/store";
+import { stageOf } from "../lib/clickup";
 
 export function JobPicker(props: {
   jobs: Job[];
@@ -16,14 +17,16 @@ export function JobPicker(props: {
 }) {
   const [q, setQ] = useState("");
   useEffect(() => {
-    if (!props.loadedAt) props.onRefresh();
+    // One quick request now, so refresh every time it opens with signal; offline it shows the last list.
+    if (!props.loadedAt || navigator.onLine) props.onRefresh();
   }, []);
   const shown = useMemo(() => {
     const words = q.toLowerCase().split(/\s+/).filter(Boolean);
     return props.jobs.filter((j) => words.every((w) => j.name.toLowerCase().includes(w)));
   }, [q, props.jobs]);
-  const live = shown.filter((j) => !j.sold);
-  const sold = shown.filter((j) => j.sold);
+  // Lists cached before 7 Nov still hold sold jobs: leave them out here too.
+  const visit = shown.filter((j) => !j.sold && stageOf(j.status) === "visit");
+  const active = shown.filter((j) => !j.sold && stageOf(j.status) === "active");
   const row = (j: Job) => (
     <button key={j.id} className={"svr-job" + (props.current?.id === j.id ? " current" : "")} onClick={() => props.onPick(j)}>
       <span className="svr-job-name">{j.name}</span>
@@ -55,11 +58,11 @@ export function JobPicker(props: {
       <input className="svr-search" placeholder="Search deals and jobs" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
       {props.error && <p className="svr-error">{props.error}</p>}
       <div className="svr-job-list">
-        {live.length > 0 && <h3>Live deals</h3>}
-        {live.map(row)}
-        {sold.length > 0 && <h3>Sold jobs</h3>}
-        {sold.map(row)}
-        {!props.loading && shown.length === 0 && <p className="svr-muted">No deals match. Tap New job to create one.</p>}
+        {visit.length > 0 && <h3>Need a site visit</h3>}
+        {visit.map(row)}
+        {active.length > 0 && <h3>Other live deals</h3>}
+        {active.map(row)}
+        {!props.loading && visit.length + active.length === 0 && <p className="svr-muted">No deals match. Tap New job to create one.</p>}
       </div>
     </Modal>
   );
