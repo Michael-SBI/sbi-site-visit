@@ -30,7 +30,7 @@ import * as N from "./lib/naming";
 import * as Store from "./lib/store";
 import type { DrawingMeta, Job, Settings } from "./lib/store";
 
-const VERSION = "1.2.2";
+const VERSION = "1.2.3";
 const UNIT = 1.5; // canvas units per PDF point
 
 // Clean markup defaults: red, sharp, no hand-drawn wobble, a plain font.
@@ -900,6 +900,10 @@ export default function App() {
   else if (!dirty && meta.savedAt)
     status = `Saved to Drive ${new Date(meta.savedAt).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit" })}`;
   else status = online ? "Not saved to Drive" : "Offline · kept on this device";
+
+  // For the auto-reload on update (main.tsx): save to the device first, and wait while busy.
+  (window as any).__svrFlush = autosaveNow;
+  (window as any).__svrBusy = () => !!busy || !!ask;
 
   if (import.meta.env.DEV)
     (window as any).__svr = {
