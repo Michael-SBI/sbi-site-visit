@@ -839,7 +839,11 @@ export default function App() {
     status = `Saved to Drive ${new Date(meta.savedAt).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit" })}`;
   else status = online ? "Not saved to Drive" : "Offline · kept on this device";
 
-  if (import.meta.env.DEV) (window as any).__svr = { api: apiRef.current, buildPdf, meta: metaRef.current, N, makeThumb, visitProps, G };
+  if (import.meta.env.DEV)
+    (window as any).__svr = {
+      api: apiRef.current, buildPdf, meta: metaRef.current, N, makeThumb, visitProps, G,
+      setJob: (j: Job) => setMeta({ ...metaRef.current, job: j }), // test a save without a ClickUp token
+    };
 
   if (!ready) return <div className="svr-loading">Loading…</div>;
 
