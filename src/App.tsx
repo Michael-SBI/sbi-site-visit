@@ -30,7 +30,7 @@ import * as N from "./lib/naming";
 import * as Store from "./lib/store";
 import type { DrawingMeta, Job, Settings } from "./lib/store";
 
-const VERSION = "1.2.1";
+const VERSION = "1.2.2";
 const UNIT = 1.5; // canvas units per PDF point
 
 // Clean markup defaults: red, sharp, no hand-drawn wobble, a plain font.
@@ -302,10 +302,6 @@ export default function App() {
   const freehand = () => {
     endHighlight();
     api.setActiveTool({ type: "freedraw" });
-  };
-  const straight = () => {
-    endHighlight();
-    api.setActiveTool({ type: "line" });
   };
   const highlighter = () => {
     if (hlSaved.current) return freehand();
@@ -931,8 +927,6 @@ export default function App() {
           </button>
         </div>
         <div className="svr-tools">
-          {tb("pen", "Freehand", freehand, tool === "freedraw" && !highlighting)}
-          {tb("line", "Straight", straight, tool === "line")}
           {tb("highlighter", "Highlight", highlighter, highlighting)}
           <div className="svr-pop">
             {tb("stamp", "Stamp", () => setPanel(panel === "stamps" ? null : "stamps"), panel === "stamps")}
