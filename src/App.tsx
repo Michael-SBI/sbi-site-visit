@@ -30,7 +30,7 @@ import * as N from "./lib/naming";
 import * as Store from "./lib/store";
 import type { DrawingMeta, Job, Settings } from "./lib/store";
 
-const VERSION = "1.2.3";
+const VERSION = "1.2.4";
 const UNIT = 1.5; // canvas units per PDF point
 
 // Clean markup defaults: red, sharp, no hand-drawn wobble, a plain font.
