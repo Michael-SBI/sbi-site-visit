@@ -1,0 +1,182 @@
+/* SBI Site Visit Record. Spoke palette: Graphite leads, Pass Lime the one accent (Graphite text on lime). */
+:root {
+  --graphite: #1a1a1a;
+  --graphite-2: #2a2a2a;
+  --stone: #5e605e;
+  --cloud: #ececeb;
+  --paper: #f5f6f4;
+  --hair: #dededd;
+  --lime: #6cb33f;
+  --lime-ink: #3f7322;
+  --red: #c92a2a;
+  --bar-h: 56px;
+  --ui: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body {
+  font-family: var(--ui);
+  background: var(--paper);
+  color: var(--graphite);
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.svr-loading { display: grid; place-items: center; height: 100%; color: var(--stone); }
+.svr-app { display: flex; flex-direction: column; height: 100%; }
+.svr-canvas { flex: 1; min-height: 0; position: relative; }
+
+/* ---------- top bar ---------- */
+.svr-bar {
+  display: flex; align-items: center; gap: 10px;
+  min-height: var(--bar-h); padding: 6px 10px; padding-top: max(6px, env(safe-area-inset-top));
+  background: var(--graphite); color: #fff;
+  position: relative; z-index: 20;
+}
+.svr-left, .svr-right { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.svr-left { flex: 1 1 0; }
+.svr-right { flex: 1 1 0; justify-content: flex-end; }
+.svr-tools { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; }
+.svr-logo { width: 40px; height: 40px; flex: none; display: block; }
+.svr-jobchip {
+  display: flex; align-items: center; gap: 6px; min-width: 0; max-width: 340px;
+  height: 40px; padding: 0 10px 0 12px; border-radius: 8px;
+  background: var(--graphite-2); color: #fff; border: 1px solid #3a3a3a; font: 600 14px var(--ui);
+}
+.svr-jobchip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.svr-jobchip.empty { border-color: var(--lime); color: var(--lime); }
+.svr-tool {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  min-width: 56px; height: 48px; padding: 0 6px; border-radius: 8px;
+  background: transparent; color: #d9d9d9; border: 0; font: 500 11px var(--ui);
+}
+.svr-tool:hover { background: var(--graphite-2); color: #fff; }
+.svr-tool.active { background: var(--lime); color: var(--graphite); }
+.svr-sep { width: 1px; height: 32px; background: #3a3a3a; margin: 0 6px; }
+.svr-status { font: 500 12px var(--ui); color: #bdbdbd; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.svr-status.dirty { color: #ffd8a8; }
+
+.svr-btn {
+  display: inline-flex; align-items: center; gap: 6px; height: 40px; padding: 0 14px; border-radius: 8px;
+  border: 1px solid #3a3a3a; background: var(--graphite-2); color: #fff; font: 600 14px var(--ui); cursor: pointer;
+}
+.svr-btn.primary { background: var(--lime); border-color: var(--lime); color: var(--graphite); }
+.svr-btn.ghost { background: transparent; color: inherit; border-color: var(--hair); }
+.svr-btn:disabled { opacity: 0.5; cursor: default; }
+.svr-btn { position: relative; }
+.svr-btn.unsaved::after {
+  content: ""; position: absolute; top: -3px; right: -3px; width: 10px; height: 10px; border-radius: 50%;
+  background: #ff922b; border: 2px solid var(--graphite);
+}
+.svr-icon-btn {
+  display: grid; place-items: center; width: 40px; height: 40px; border-radius: 8px;
+  border: 0; background: transparent; color: var(--graphite); cursor: pointer;
+}
+.svr-icon-btn.light { color: #fff; }
+.svr-icon-btn:hover { background: rgba(127, 127, 127, 0.15); }
+
+/* drop-down menus in the bar */
+.svr-pop { position: relative; }
+.svr-menu {
+  position: absolute; top: calc(100% + 6px); left: 0; min-width: 240px; padding: 6px;
+  background: #fff; color: var(--graphite); border: 1px solid var(--hair); border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18); display: flex; flex-direction: column; z-index: 30;
+}
+.svr-menu.right { left: auto; right: 0; }
+.svr-menu button {
+  display: flex; align-items: center; gap: 10px; text-align: left;
+  min-height: 44px; padding: 8px 12px; border: 0; border-radius: 8px; background: transparent;
+  font: 600 15px var(--ui); color: inherit; cursor: pointer;
+}
+.svr-menu button:hover { background: var(--paper); }
+
+/* narrow screens: icons only */
+@media (max-width: 1180px) {
+  .svr-tool .lbl { display: none; }
+  .svr-tool { min-width: 44px; }
+}
+@media (max-width: 900px) {
+  .svr-btn .lbl, .svr-status { display: none; }
+  .svr-btn { padding: 0 10px; }
+  .svr-jobchip { max-width: 160px; }
+}
+
+/* ---------- dialogs ---------- */
+.svr-backdrop {
+  position: fixed; inset: 0; z-index: 100; background: rgba(20, 20, 20, 0.45);
+  display: grid; place-items: center; padding: 16px;
+}
+.svr-modal {
+  width: min(520px, 100%); max-height: min(86vh, 900px); display: flex; flex-direction: column;
+  background: #fff; border-radius: 14px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3); overflow: hidden;
+}
+.svr-modal.wide { width: min(760px, 100%); }
+.svr-modal-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 14px 6px 20px; }
+.svr-modal-head h2 { margin: 0; font: 700 20px var(--ui); letter-spacing: -0.01em; }
+.svr-modal-body { padding: 6px 20px 16px; overflow: auto; }
+.svr-modal-foot {
+  display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap;
+  padding: 12px 20px; border-top: 1px solid var(--hair); background: var(--paper);
+}
+.svr-modal-foot .svr-muted { margin-right: auto; }
+.svr-form { display: flex; flex-direction: column; gap: 14px; }
+.svr-form section { display: flex; flex-direction: column; gap: 10px; padding-bottom: 14px; border-bottom: 1px solid var(--hair); }
+.svr-form section:last-child { border-bottom: 0; }
+.svr-form h3, .svr-job-list h3 {
+  margin: 4px 0 0; font: 600 11px "IBM Plex Mono", ui-monospace, monospace; text-transform: uppercase;
+  letter-spacing: 0.12em; color: var(--stone);
+}
+.svr-text { font-size: 15px; line-height: 1.5; color: #333; }
+.svr-text p { margin: 0 0 8px; }
+.svr-field { display: flex; flex-direction: column; gap: 6px; font-size: 14px; font-weight: 600; }
+.svr-field input, .svr-search {
+  height: 46px; padding: 0 12px; border: 1px solid var(--hair); border-radius: 8px;
+  font: 400 16px var(--ui); color: var(--graphite); background: #fff; width: 100%;
+}
+.svr-field input:focus, .svr-search:focus { outline: 2px solid var(--lime); border-color: var(--lime); }
+.svr-field small { font-weight: 400; color: var(--stone); line-height: 1.4; }
+.svr-check { display: flex; gap: 10px; align-items: flex-start; font-size: 15px; }
+.svr-check input { width: 20px; height: 20px; margin-top: 1px; accent-color: var(--lime-ink); }
+.svr-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.svr-actions.left { justify-content: flex-start; }
+.svr-modal .svr-btn:not(.primary) { background: #fff; color: var(--graphite); border-color: var(--hair); }
+.svr-muted { color: var(--stone); font-size: 14px; }
+.svr-muted.small, .small { font-size: 12px; }
+.svr-error { color: var(--red); font-size: 14px; }
+
+/* job list */
+.svr-search { margin-bottom: 10px; }
+.svr-job-list { display: flex; flex-direction: column; gap: 4px; }
+.svr-job {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; text-align: left;
+  min-height: 52px; padding: 8px 12px; border-radius: 10px; border: 1px solid transparent;
+  background: transparent; font: 600 15px var(--ui); color: var(--graphite); cursor: pointer;
+}
+.svr-job:hover { background: var(--paper); }
+.svr-job.current { border-color: var(--lime); background: #f3f9ef; }
+.svr-job-name { min-width: 0; }
+.svr-job-meta { display: flex; gap: 6px; flex: none; }
+.svr-chip {
+  font: 500 11px "IBM Plex Mono", ui-monospace, monospace; text-transform: uppercase; letter-spacing: 0.06em;
+  padding: 3px 8px; border-radius: 100px; background: var(--cloud); color: var(--stone); white-space: nowrap;
+}
+.svr-chip.warn { background: #fff4e6; color: #a65d00; }
+
+/* file browser */
+.svr-crumbs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
+.svr-crumb {
+  border: 0; background: var(--cloud); border-radius: 100px; padding: 6px 12px; font: 600 13px var(--ui);
+  color: var(--graphite); cursor: pointer;
+}
+.svr-crumb:disabled { background: var(--graphite); color: #fff; cursor: default; }
+.svr-files { display: flex; flex-direction: column; gap: 2px; }
+.svr-file {
+  display: flex; align-items: center; gap: 12px; min-height: 50px; padding: 8px 12px; border-radius: 10px;
+  border: 0; background: transparent; text-align: left; font: 500 15px var(--ui); color: var(--graphite); cursor: pointer;
+}
+.svr-file:hover { background: var(--paper); }
+.svr-file.folder svg { color: var(--lime-ink); }
+.svr-file.pdf svg { color: var(--red); }
+.svr-file-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+
+/* Excalidraw tweaks: keep its toolbar clear of our bar, show our green on its selected tool */
+.svr-canvas .excalidraw { --color-primary: #3f7322; --color-primary-darker: #2f5a19; --color-primary-darkest: #234412; --color-primary-light: #e3f1d9; }
