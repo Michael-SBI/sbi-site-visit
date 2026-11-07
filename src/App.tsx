@@ -30,7 +30,7 @@ import * as N from "./lib/naming";
 import * as Store from "./lib/store";
 import type { DrawingMeta, Job, Settings } from "./lib/store";
 
-const VERSION = "1.2.0";
+const VERSION = "1.2.1";
 const UNIT = 1.5; // canvas units per PDF point
 
 // Clean markup defaults: red, sharp, no hand-drawn wobble, a plain font.
@@ -249,6 +249,9 @@ export default function App() {
 
   const lastHash = useRef(0);
   const settled = useRef(false);
+  const placing = useRef<Set<string>>(new Set()); // new imports still being positioned
+  const importsLockedRef = useRef(true);
+  importsLockedRef.current = importsLocked;
   const onChange = useCallback((elements: readonly any[], appState: any) => {
     // The first time the restored drawing is on screen, settle its imports underneath and locked.
     if (!settled.current && elements.length) {
@@ -260,6 +263,19 @@ export default function App() {
       lastHash.current = h;
       setHash(h);
       scheduleAutosave();
+    }
+    // A new import stays free while it's selected, for placing and sizing; tapping off it locks it.
+    if (placing.current.size && !Object.keys(appState.selectedElementIds || {}).some((id) => placing.current.has(id))) {
+      const ids = placing.current;
+      placing.current = new Set();
+      if (importsLockedRef.current)
+        setTimeout(() => {
+          const a = apiRef.current;
+          a.updateScene({
+            elements: a.getSceneElementsIncludingDeleted().map((e: any) => (ids.has(e.id) && !e.locked ? newElementWith(e, { locked: true }) : e)),
+            captureUpdate: CaptureUpdateAction.NEVER,
+          });
+        }, 0);
     }
     const t = appState.activeTool?.type;
     setTool((prev) => (prev === t ? prev : t));
@@ -338,7 +354,18 @@ export default function App() {
     const all = api.getSceneElementsIncludingDeleted();
     const imports = all.filter(isImport);
     const markup = all.filter((e: any) => !isImport(e));
-    return [...imports, ...newImports.map((e) => ({ ...e, locked: importsLocked })), ...markup];
+    // New imports come in free; selectNew() selects them and they lock when you tap off them.
+    return [...imports, ...newImports.map((e) => ({ ...e, locked: false })), ...markup];
+  }
+
+  /** Selects freshly imported items so they can be moved and sized straight away. */
+  function selectNew(els: any[]) {
+    placing.current = new Set(els.map((e) => e.id));
+    api.setActiveTool({ type: "selection" });
+    api.updateScene({
+      appState: { selectedElementIds: Object.fromEntries(els.map((e) => [e.id, true])) },
+      captureUpdate: CaptureUpdateAction.NEVER,
+    });
   }
 
   function toggleLock() {
@@ -395,7 +422,8 @@ export default function App() {
       api.addFiles(files);
       api.updateScene({ elements: withImports(els), captureUpdate: CaptureUpdateAction.IMMEDIATELY });
       setTimeout(() => api.scrollToContent(els, { fitToContent: true, animate: true }), 50);
-      api.setActiveTool({ type: "freedraw" });
+      selectNew(els);
+      toast("Move or size the new pages if needed, then tap off them to lock them.");
     } catch (e: any) {
       toast("Couldn't read that PDF: " + e.message, true);
     } finally {
@@ -419,6 +447,7 @@ export default function App() {
         elements: withImports([{ ...el, status: "saved", customData: { sbiPhoto: true } }]),
         captureUpdate: CaptureUpdateAction.IMMEDIATELY,
       });
+      selectNew([el]);
       const name = opts.name || N.photoName();
       if (opts.toDevice && settings.savePhotosToDevice) saveToDevice(file, name);
       if (opts.upload) {
