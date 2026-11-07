@@ -30,7 +30,7 @@ import * as N from "./lib/naming";
 import * as Store from "./lib/store";
 import type { DrawingMeta, Job, Settings } from "./lib/store";
 
-const VERSION = "1.1.0";
+const VERSION = "1.2.0";
 const UNIT = 1.5; // canvas units per PDF point
 
 // Clean markup defaults: red, sharp, no hand-drawn wobble, a plain font.
@@ -60,6 +60,9 @@ const STAMPS: { word: string; color: string }[] = [
   { word: "NEW", color: "#1971c2" },
 ];
 const HIGHLIGHT = { currentItemStrokeColor: "#fcc419", currentItemOpacity: 35, currentItemStrokeWidth: 4 };
+
+/** Plans and photos: the Imports layer. */
+const isImport = (el: any) => isSheet(el) || !!el?.customData?.sbiPhoto;
 
 /** A small JPEG of the whole drawing, URL-safe base64 as Drive's thumbnail field wants it. */
 async function makeThumb(elements: readonly any[], files: any): Promise<string | null> {
@@ -119,7 +122,7 @@ export default function App() {
   const [tool, setTool] = useState<string>("selection");
   const [highlighting, setHighlighting] = useState(false);
   const hlSaved = useRef<any>(null);
-  const [sheetsLocked, setSheetsLocked] = useState(true);
+  const [importsLocked, setImportsLocked] = useState(true);
   const [panel, setPanel] = useState<null | "jobs" | "browse" | "settings" | "stamps" | "add" | "more" | "visits">(null);
   const [ask, setAsk] = useState<AskState>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -202,6 +205,22 @@ export default function App() {
     if (api && ready?.initialData?.elements?.length) toast("Picked up where you left off.");
   }, [api]);
 
+  /** Drawings from before the Imports layer: put plans and photos underneath and lock them. */
+  function settleImports() {
+    const a = apiRef.current;
+    const all = a.getSceneElementsIncludingDeleted();
+    const imports = all.filter(isImport);
+    if (!imports.length) return;
+    const ordered = [...imports, ...all.filter((e: any) => !isImport(e))];
+    const changed = ordered.some((e: any, i: number) => e !== all[i]) || imports.some((e: any) => !e.locked);
+    if (changed)
+      a.updateScene({
+        elements: ordered.map((e: any) => (isImport(e) && !e.locked ? newElementWith(e, { locked: true }) : e)),
+        captureUpdate: CaptureUpdateAction.NEVER,
+      });
+    setImportsLocked(true);
+  }
+
   // ---------- autosave to the device ----------
   function scheduleAutosave() {
     clearTimeout(saveTimer.current);
@@ -229,7 +248,13 @@ export default function App() {
   }
 
   const lastHash = useRef(0);
+  const settled = useRef(false);
   const onChange = useCallback((elements: readonly any[], appState: any) => {
+    // The first time the restored drawing is on screen, settle its imports underneath and locked.
+    if (!settled.current && elements.length) {
+      settled.current = true;
+      setTimeout(() => settleImports(), 0);
+    }
     const h = hashElementsVersion(elements as any);
     if (h !== lastHash.current) {
       lastHash.current = h;
@@ -305,14 +330,25 @@ export default function App() {
     api.setActiveTool({ type: "selection" });
   }
 
+  /**
+   * The Imports layer: plans and photos sit under all markup, newest import on top of older ones,
+   * locked unless unlocked. Excalidraw has no real layers, so this is the stacking order plus the lock.
+   */
+  function withImports(newImports: any[] = []) {
+    const all = api.getSceneElementsIncludingDeleted();
+    const imports = all.filter(isImport);
+    const markup = all.filter((e: any) => !isImport(e));
+    return [...imports, ...newImports.map((e) => ({ ...e, locked: importsLocked })), ...markup];
+  }
+
   function toggleLock() {
-    const next = !sheetsLocked;
-    setSheetsLocked(next);
+    const next = !importsLocked;
+    setImportsLocked(next);
     api.updateScene({
-      elements: api.getSceneElementsIncludingDeleted().map((el: any) => (isSheet(el) ? newElementWith(el, { locked: next }) : el)),
+      elements: withImports().map((el: any) => (isImport(el) ? newElementWith(el, { locked: next }) : el)),
       captureUpdate: CaptureUpdateAction.IMMEDIATELY,
     });
-    toast(next ? "Plans locked: drawing won't move them." : "Plans unlocked: drag a sheet to move it.");
+    toast(next ? "Imports locked: erase and draw freely, plans and photos stay put." : "Imports unlocked: move, resize or delete a plan or photo, then lock them again.");
   }
 
   // ---------- adding plans and photos ----------
@@ -351,13 +387,13 @@ export default function App() {
           { type: "image", fileId, x, y: start.y, width: p.wPt * UNIT, height: p.hPt * UNIT } as any,
         ]);
         els.push({
-          ...el, locked: sheetsLocked, status: "saved",
+          ...el, status: "saved",
           customData: { sbiSheet: true, source: N.stripExt(name), page: p.page, of: count, wPt: p.wPt, hPt: p.hPt, px: p.px },
         });
         x += p.wPt * UNIT + 120;
       }
       api.addFiles(files);
-      api.updateScene({ elements: [...api.getSceneElementsIncludingDeleted(), ...els], captureUpdate: CaptureUpdateAction.IMMEDIATELY });
+      api.updateScene({ elements: withImports(els), captureUpdate: CaptureUpdateAction.IMMEDIATELY });
       setTimeout(() => api.scrollToContent(els, { fitToContent: true, animate: true }), 50);
       api.setActiveTool({ type: "freedraw" });
     } catch (e: any) {
@@ -380,7 +416,7 @@ export default function App() {
         { type: "image", fileId, x: x - (w * s) / 2 + off, y: y - (h * s) / 2 + off, width: w * s, height: h * s } as any,
       ]);
       api.updateScene({
-        elements: [...api.getSceneElementsIncludingDeleted(), { ...el, status: "saved", customData: { sbiPhoto: true } }],
+        elements: withImports([{ ...el, status: "saved", customData: { sbiPhoto: true } }]),
         captureUpdate: CaptureUpdateAction.IMMEDIATELY,
       });
       const name = opts.name || N.photoName();
@@ -766,6 +802,7 @@ export default function App() {
         captureUpdate: CaptureUpdateAction.NEVER,
       });
       apiRef.current.history.clear();
+      settleImports();
       const m: DrawingMeta = {
         ...Store.emptyMeta(),
         name: sbi?.name || (f ? N.stripExt(f.name) : null),
@@ -880,7 +917,8 @@ export default function App() {
               </div>
             )}
           </div>
-          {tb(sheetsLocked ? "lock" : "unlock", sheetsLocked ? "Locked" : "Unlocked", toggleLock, !sheetsLocked, sheetsLocked ? "Plans are locked. Tap to unlock and move them." : "Plans can move. Tap to lock them.")}
+          {tb(importsLocked ? "lock" : "unlock", importsLocked ? "Imports" : "Unlocked", toggleLock, !importsLocked,
+            importsLocked ? "Imports locked: plans and photos stay put under your markup. Tap to unlock." : "Imports unlocked: plans and photos can move. Tap to lock them.")}
           <span className="svr-sep" />
           {tb("camera", "Photo", () => cameraInput.current?.click())}
           {tb("visits", "Visits", openVisits, panel === "visits", "Site visits saved in the last month")}
